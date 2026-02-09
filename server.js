@@ -1,107 +1,114 @@
 const express = require("express");
 const cors = require("cors");
+const sqlite3 = require("sqlite3").verbose();
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// "Banco de dados" em memória
-let participantes = [];
-let contadorId = 1;
+// Conexão com banco SQLite
+const db = new sqlite3.Database("./database.db");
+
+// Criar tabela
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS participantes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      nome TEXT NOT NULL,
+      email TEXT NOT NULL,
+      presente INTEGER DEFAULT 0,
+      nota INTEGER,
+      comentario TEXT
+    )
+  `);
+});
 
 // Rota teste
 app.get("/", (req, res) => {
-  res.status(200).send("API do Evento funcionando 🚀");
+  res.send("API do Evento funcionando 🚀");
 });
 
-// 👉 ROTA DE INSCRIÇÃO
+// 👉 INSCRIÇÃO
 app.post("/inscricao", (req, res) => {
   const { nome, email } = req.body;
 
-  // Validação básica
   if (!nome || !email) {
-    return res.status(400).json({
-      erro: "Nome e email são obrigatórios"
-    });
+    return res.status(400).json({ erro: "Nome e email obrigatórios" });
   }
 
-  const participante = {
-    id: contadorId++,
-    nome,
-    email,
-    presente: false,
-    avaliacao: null
-  };
+  db.run(
+    "INSERT INTO participantes (nome, email) VALUES (?, ?)",
+    [nome, email],
+    function (err) {
+      if (err) {
+        return res.status(500).json({ erro: err.message });
+      }
 
-  participantes.push(participante);
-
-  res.status(201).json({
-    mensagem: "Inscrição realizada com sucesso",
-    participante
-  });
+      res.status(201).json({
+        mensagem: "Inscrição realizada com sucesso",
+        id: this.lastID
+      });
+    }
+  );
 });
 
-// (opcional) listar inscritos
+// 👉 PRESENÇA
+app.post("/presenca/:id", (req, res) => {
+  const id = req.params.id;
+
+  db.run(
+    "UPDATE participantes SET presente = 1 WHERE id = ?",
+    [id],
+    function (err) {
+      if (this.changes === 0) {
+        return res.status(404).json({ erro: "Participante não encontrado" });
+      }
+      res.json({ mensagem: "Presença confirmada" });
+    }
+  );
+});
+
+// 👉 AVALIAÇÃO
+app.post("/avaliacao/:id", (req, res) => {
+  const id = req.params.id;
+  const { nota, comentario } = req.body;
+
+  if (!nota || nota < 1 || nota > 5) {
+    return res.status(400).json({ erro: "Nota inválida" });
+  }
+
+  db.get(
+    "SELECT presente FROM participantes WHERE id = ?",
+    [id],
+    (err, row) => {
+      if (!row) {
+        return res.status(404).json({ erro: "Participante não encontrado" });
+      }
+
+      if (!row.presente) {
+        return res.status(403).json({ erro: "Participante não esteve presente" });
+      }
+
+      db.run(
+        "UPDATE participantes SET nota = ?, comentario = ? WHERE id = ?",
+        [nota, comentario, id],
+        () => {
+          res.json({ mensagem: "Avaliação registrada" });
+        }
+      );
+    }
+  );
+});
+
+// 👉 LISTAR INSCRITOS
 app.get("/inscritos", (req, res) => {
-  res.json(participantes);
+  db.all("SELECT * FROM participantes", [], (err, rows) => {
+    res.json(rows);
+  });
 });
 
 // Porta (Render)
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor rodando na porta ${PORT}`);
-});
-// 👉 ROTA DE PRESENÇA
-app.post("/presenca/:id", (req, res) => {
-  const id = parseInt(req.params.id);
-
-  const participante = participantes.find(p => p.id === id);
-
-  if (!participante) {
-    return res.status(404).json({
-      erro: "Participante não encontrado"
-    });
-  }
-
-  participante.presente = true;
-
-  res.json({
-    mensagem: "Presença confirmada com sucesso",
-    participante
-  });
-});
-// 👉 ROTA DE AVALIAÇÃO
-app.post("/avaliacao/:id", (req, res) => {
-  const id = parseInt(req.params.id);
-  const { nota, comentario } = req.body;
-
-  const participante = participantes.find(p => p.id === id);
-
-  if (!participante) {
-    return res.status(404).json({
-      erro: "Participante não encontrado"
-    });
-  }
-
-  if (!participante.presente) {
-    return res.status(403).json({
-      erro: "Avaliação permitida somente para participantes presentes"
-    });
-  }
-
-  if (!nota || nota < 1 || nota > 5) {
-    return res.status(400).json({
-      erro: "Nota deve ser entre 1 e 5"
-    });
-  }
-
-  participante.avaliacao = {
-    nota,
-    comentario: comentario || ""
-  };
-
-  res.json({
-    mensagem: "Avaliação registrada com sucesso",
-    participante
-  });
 });
