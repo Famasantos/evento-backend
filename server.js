@@ -1,3 +1,5 @@
+const gerarCertificado = require("./certificado");
+const nodemailer = require("nodemailer");
 const express = require("express");
 const cors = require("cors");
 const sqlite3 = require("sqlite3").verbose();
@@ -111,4 +113,59 @@ app.get("/inscritos", (req, res) => {
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor rodando na porta ${PORT}`);
+});
+// 👉 CERTIFICADO (gera PDF + envia email + retorna no navegador)
+app.get("/certificado/:id", (req, res) => {
+  const id = req.params.id;
+
+  db.get(
+    "SELECT * FROM participantes WHERE id = ?",
+    [id],
+    async (err, participante) => {
+      if (!participante) {
+        return res.status(404).json({ erro: "Participante não encontrado" });
+      }
+
+      if (!participante.presente || !participante.nota) {
+        return res.status(403).json({
+          erro: "Certificado disponível somente para participantes presentes e avaliados"
+        });
+      }
+
+      const pdfBuffer = await gerarCertificado(
+        participante.nome,
+        participante.email
+      );
+
+      // Enviar email
+      const transporter = nodemailer.createTransport({
+        service: "gmail",
+        auth: {
+          user: process.env.EMAIL_USER,
+          pass: process.env.EMAIL_PASS
+        }
+      });
+
+      await transporter.sendMail({
+        from: process.env.EMAIL_USER,
+        to: participante.email,
+        subject: "Seu certificado do evento",
+        text: "Segue em anexo seu certificado de participação.",
+        attachments: [
+          {
+            filename: "certificado.pdf",
+            content: pdfBuffer
+          }
+        ]
+      });
+
+      // Retornar PDF no navegador
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        "inline; filename=certificado.pdf"
+      );
+      res.send(pdfBuffer);
+    }
+  );
 });
