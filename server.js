@@ -133,26 +133,25 @@ app.get("/certificado/:id", (req, res) => {
       }
 
       try {
+        // 1️⃣ Gerar PDF
         const pdfBuffer = await gerarCertificado(
           participante.nome,
           participante.email
         );
 
-        // 👉 RETORNA O PDF IMEDIATAMENTE
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", "inline; filename=certificado.pdf");
-        res.end(pdfBuffer);
-
-        // 👉 ENVIO DE EMAIL EM SEGUNDO PLANO
+        // 2️⃣ Configurar transporte SMTP (com debug)
         const transporter = nodemailer.createTransport({
           service: "gmail",
           auth: {
             user: process.env.EMAIL_USER,
             pass: process.env.EMAIL_PASS
-          }
+          },
+          logger: true,
+          debug: true
         });
 
-        transporter.sendMail({
+        // 3️⃣ Enviar e-mail (AGUARDAR)
+        await transporter.sendMail({
           from: process.env.EMAIL_USER,
           to: participante.email,
           subject: "Seu certificado do evento",
@@ -163,11 +162,18 @@ app.get("/certificado/:id", (req, res) => {
               content: pdfBuffer
             }
           ]
-        }).catch(console.error);
+        });
+
+        console.log("📧 Email enviado com sucesso para", participante.email);
+
+        // 4️⃣ Retornar PDF no navegador
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", "inline; filename=certificado.pdf");
+        res.end(pdfBuffer);
 
       } catch (error) {
-        console.error(error);
-        res.status(500).json({ erro: "Erro ao gerar certificado" });
+        console.error("❌ Erro ao gerar/enviar certificado:", error);
+        res.status(500).json({ erro: "Erro ao gerar ou enviar certificado" });
       }
     }
   );
