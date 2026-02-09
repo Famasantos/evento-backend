@@ -51,3 +51,22 @@ const PORT = process.env.PORT || 10000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Servidor rodando na porta ${PORT}`);
 });
+// 👉 ROTA DE PRESENÇA
+app.post("/presenca/:id", (req, res) => {
+  const id = parseInt(req.params.id);
+
+  const participante = participantes.find(p => p.id === id);
+
+  if (!participante) {
+    return res.status(404).json({
+      erro: "Participante não encontrado"
+    });
+  }
+
+  participante.presente = true;
+
+  res.json({
+    mensagem: "Presença confirmada com sucesso",
+    participante
+  });
+});
