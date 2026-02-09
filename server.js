@@ -132,40 +132,43 @@ app.get("/certificado/:id", (req, res) => {
         });
       }
 
-      const pdfBuffer = await gerarCertificado(
-        participante.nome,
-        participante.email
-      );
+      try {
+        const pdfBuffer = await gerarCertificado(
+          participante.nome,
+          participante.email
+        );
 
-      // Enviar email
-      const transporter = nodemailer.createTransport({
-        service: "gmail",
-        auth: {
-          user: process.env.EMAIL_USER,
-          pass: process.env.EMAIL_PASS
-        }
-      });
+        // 👉 RETORNA O PDF IMEDIATAMENTE
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", "inline; filename=certificado.pdf");
+        res.end(pdfBuffer);
 
-      await transporter.sendMail({
-        from: process.env.EMAIL_USER,
-        to: participante.email,
-        subject: "Seu certificado do evento",
-        text: "Segue em anexo seu certificado de participação.",
-        attachments: [
-          {
-            filename: "certificado.pdf",
-            content: pdfBuffer
+        // 👉 ENVIO DE EMAIL EM SEGUNDO PLANO
+        const transporter = nodemailer.createTransport({
+          service: "gmail",
+          auth: {
+            user: process.env.EMAIL_USER,
+            pass: process.env.EMAIL_PASS
           }
-        ]
-      });
+        });
 
-      // Retornar PDF no navegador
-      res.setHeader("Content-Type", "application/pdf");
-      res.setHeader(
-        "Content-Disposition",
-        "inline; filename=certificado.pdf"
-      );
-      res.send(pdfBuffer);
+        transporter.sendMail({
+          from: process.env.EMAIL_USER,
+          to: participante.email,
+          subject: "Seu certificado do evento",
+          text: "Segue em anexo seu certificado de participação.",
+          attachments: [
+            {
+              filename: "certificado.pdf",
+              content: pdfBuffer
+            }
+          ]
+        }).catch(console.error);
+
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ erro: "Erro ao gerar certificado" });
+      }
     }
   );
 });
