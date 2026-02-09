@@ -70,3 +70,38 @@ app.post("/presenca/:id", (req, res) => {
     participante
   });
 });
+// 👉 ROTA DE AVALIAÇÃO
+app.post("/avaliacao/:id", (req, res) => {
+  const id = parseInt(req.params.id);
+  const { nota, comentario } = req.body;
+
+  const participante = participantes.find(p => p.id === id);
+
+  if (!participante) {
+    return res.status(404).json({
+      erro: "Participante não encontrado"
+    });
+  }
+
+  if (!participante.presente) {
+    return res.status(403).json({
+      erro: "Avaliação permitida somente para participantes presentes"
+    });
+  }
+
+  if (!nota || nota < 1 || nota > 5) {
+    return res.status(400).json({
+      erro: "Nota deve ser entre 1 e 5"
+    });
+  }
+
+  participante.avaliacao = {
+    nota,
+    comentario: comentario || ""
+  };
+
+  res.json({
+    mensagem: "Avaliação registrada com sucesso",
+    participante
+  });
+});
