@@ -1,17 +1,18 @@
-const gerarCertificado = require("./certificado");
-const nodemailer = require("nodemailer");
 const express = require("express");
 const cors = require("cors");
 const sqlite3 = require("sqlite3").verbose();
+const PDFDocument = require("pdfkit");
+const { Resend } = require("resend");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Conexão com banco SQLite
+// ========================
+// BANCO DE DADOS (SQLite)
+// ========================
 const db = new sqlite3.Database("./database.db");
 
-// Criar tabela
 db.serialize(() => {
   db.run(`
     CREATE TABLE IF NOT EXISTS participantes (
@@ -25,12 +26,50 @@ db.serialize(() => {
   `);
 });
 
-// Rota teste
+// ========================
+// RESEND (EMAIL)
+// ========================
+const resend = new Resend(process.env.RESEND_API_KEY);
+
+// ========================
+// FUNÇÃO: GERAR CERTIFICADO
+// ========================
+function gerarCertificado(nome) {
+  return new Promise((resolve) => {
+    const doc = new PDFDocument();
+    const buffers = [];
+
+    doc.on("data", buffers.push.bind(buffers));
+    doc.on("end", () => {
+      resolve(Buffer.concat(buffers));
+    });
+
+    doc.fontSize(26).text("CERTIFICADO", { align: "center" });
+    doc.moveDown(2);
+
+    doc.fontSize(16).text(
+      `Certificamos que ${nome} participou do evento com presença confirmada e avaliação registrada.`,
+      { align: "center" }
+    );
+
+    doc.moveDown(2);
+    doc.text("Carga horária: 8 horas", { align: "center" });
+    doc.text(`Data: ${new Date().toLocaleDateString()}`, { align: "center" });
+
+    doc.end();
+  });
+}
+
+// ========================
+// ROTAS
+// ========================
+
+// Teste
 app.get("/", (req, res) => {
   res.send("API do Evento funcionando 🚀");
 });
 
-// 👉 INSCRIÇÃO
+// INSCRIÇÃO
 app.post("/inscricao", (req, res) => {
   const { nome, email } = req.body;
 
@@ -54,14 +93,14 @@ app.post("/inscricao", (req, res) => {
   );
 });
 
-// 👉 PRESENÇA
+// PRESENÇA
 app.post("/presenca/:id", (req, res) => {
   const id = req.params.id;
 
   db.run(
     "UPDATE participantes SET presente = 1 WHERE id = ?",
     [id],
-    function (err) {
+    function () {
       if (this.changes === 0) {
         return res.status(404).json({ erro: "Participante não encontrado" });
       }
@@ -70,13 +109,13 @@ app.post("/presenca/:id", (req, res) => {
   );
 });
 
-// 👉 AVALIAÇÃO
+// AVALIAÇÃO
 app.post("/avaliacao/:id", (req, res) => {
   const id = req.params.id;
   const { nota, comentario } = req.body;
 
   if (!nota || nota < 1 || nota > 5) {
-    return res.status(400).json({ erro: "Nota inválida" });
+    return res.status(400).json({ erro: "Nota deve ser entre 1 e 5" });
   }
 
   db.get(
@@ -88,12 +127,14 @@ app.post("/avaliacao/:id", (req, res) => {
       }
 
       if (!row.presente) {
-        return res.status(403).json({ erro: "Participante não esteve presente" });
+        return res
+          .status(403)
+          .json({ erro: "Participante não esteve presente" });
       }
 
       db.run(
         "UPDATE participantes SET nota = ?, comentario = ? WHERE id = ?",
-        [nota, comentario, id],
+        [nota, comentario || "", id],
         () => {
           res.json({ mensagem: "Avaliação registrada" });
         }
@@ -102,19 +143,14 @@ app.post("/avaliacao/:id", (req, res) => {
   );
 });
 
-// 👉 LISTAR INSCRITOS
+// LISTAR INSCRITOS
 app.get("/inscritos", (req, res) => {
   db.all("SELECT * FROM participantes", [], (err, rows) => {
     res.json(rows);
   });
 });
 
-// Porta (Render)
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-});
-// 👉 CERTIFICADO (gera PDF + envia email + retorna no navegador)
+// CERTIFICADO (PDF + EMAIL)
 app.get("/certificado/:id", (req, res) => {
   const id = req.params.id;
 
@@ -133,48 +169,48 @@ app.get("/certificado/:id", (req, res) => {
       }
 
       try {
-        // 1️⃣ Gerar PDF
-        const pdfBuffer = await gerarCertificado(
-          participante.nome,
-          participante.email
+        // Gerar PDF
+        const pdfBuffer = await gerarCertificado(participante.nome);
+
+        // Retornar PDF no navegador
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          "inline; filename=certificado.pdf"
         );
+        res.end(pdfBuffer);
 
-        // 2️⃣ Configurar transporte SMTP (com debug)
-        const transporter = nodemailer.createTransport({
-          service: "gmail",
-          auth: {
-            user: process.env.EMAIL_USER,
-            pass: process.env.EMAIL_PASS
-          },
-          logger: true,
-          debug: true
-        });
-
-        // 3️⃣ Enviar e-mail (AGUARDAR)
-        await transporter.sendMail({
-          from: process.env.EMAIL_USER,
+        // Enviar email (assíncrono)
+        resend.emails.send({
+          from: "Certificados <onboarding@resend.dev>",
           to: participante.email,
           subject: "Seu certificado do evento",
           text: "Segue em anexo seu certificado de participação.",
           attachments: [
             {
               filename: "certificado.pdf",
-              content: pdfBuffer
+              content: pdfBuffer.toString("base64")
             }
           ]
+        })
+        .then(() => {
+          console.log("📧 Certificado enviado por email para", participante.email);
+        })
+        .catch(err => {
+          console.error("❌ Erro ao enviar email:", err.message);
         });
 
-        console.log("📧 Email enviado com sucesso para", participante.email);
-
-        // 4️⃣ Retornar PDF no navegador
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", "inline; filename=certificado.pdf");
-        res.end(pdfBuffer);
-
       } catch (error) {
-        console.error("❌ Erro ao gerar/enviar certificado:", error);
-        res.status(500).json({ erro: "Erro ao gerar ou enviar certificado" });
+        console.error("❌ Erro ao gerar certificado:", error);
       }
     }
   );
+});
+
+// ========================
+// SERVIDOR
+// ========================
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
