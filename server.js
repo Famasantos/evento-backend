@@ -13,18 +13,22 @@ app.use(express.json());
 // ========================
 const db = new sqlite3.Database("./database.db");
 
-db.serialize(() => {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS participantes (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      nome TEXT NOT NULL,
-      email TEXT NOT NULL,
-      presente INTEGER DEFAULT 0,
-      nota INTEGER,
-      comentario TEXT
-    )
-  `);
-});
+db.run(`
+  CREATE TABLE IF NOT EXISTS participantes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome TEXT NOT NULL,
+    email TEXT NOT NULL,
+    cpf TEXT,
+    telefone TEXT,
+    instituicao TEXT,
+    cargo TEXT,
+    presente INTEGER DEFAULT 0,
+    nota INTEGER,
+    comentario TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
 
 // ========================
 // RESEND (EMAIL)
@@ -71,15 +75,28 @@ app.get("/", (req, res) => {
 
 // INSCRIÇÃO
 app.post("/inscricao", (req, res) => {
-  const { nome, email } = req.body;
+  const {
+    nome,
+    email,
+    cpf,
+    telefone,
+    instituicao,
+    cargo
+  } = req.body;
 
   if (!nome || !email) {
-    return res.status(400).json({ erro: "Nome e email obrigatórios" });
+    return res.status(400).json({
+      erro: "Nome e email são obrigatórios"
+    });
   }
 
   db.run(
-    "INSERT INTO participantes (nome, email) VALUES (?, ?)",
-    [nome, email],
+    `
+    INSERT INTO participantes
+    (nome, email, cpf, telefone, instituicao, cargo)
+    VALUES (?, ?, ?, ?, ?, ?)
+    `,
+    [nome, email, cpf, telefone, instituicao, cargo],
     function (err) {
       if (err) {
         return res.status(500).json({ erro: err.message });
@@ -92,6 +109,7 @@ app.post("/inscricao", (req, res) => {
     }
   );
 });
+
 
 // PRESENÇA
 app.post("/presenca/:id", (req, res) => {
