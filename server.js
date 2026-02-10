@@ -1,3 +1,4 @@
+const gerarCertificado = require("./templates/certificado");
 const express = require("express");
 const cors = require("cors");
 const sqlite3 = require("sqlite3").verbose();
@@ -188,7 +189,13 @@ app.post("/certificado/:id", (req, res) => {
 
       try {
         // 1️⃣ Gerar PDF
-        const pdfBuffer = await gerarCertificado(participante.nome);
+        const pdfBuffer = await gerarCertificado({
+  nome: participante.nome,
+  evento: "Evento de Capacitação Profissional",
+  cargaHoraria: 8,
+  data: new Date().toLocaleDateString()
+});
+
 
         // 2️⃣ Retornar PDF no navegador
         res.setHeader("Content-Type", "application/pdf");
