@@ -151,7 +151,7 @@ app.get("/inscritos", (req, res) => {
 });
 
 // CERTIFICADO (PDF + EMAIL)
-app.get("/certificado/:id", (req, res) => {
+app.post("/certificado/:id", (req, res) => {
   const id = req.params.id;
 
   db.get(
@@ -169,10 +169,10 @@ app.get("/certificado/:id", (req, res) => {
       }
 
       try {
-        // Gerar PDF
+        // 1️⃣ Gerar PDF
         const pdfBuffer = await gerarCertificado(participante.nome);
 
-        // Retornar PDF no navegador
+        // 2️⃣ Retornar PDF no navegador
         res.setHeader("Content-Type", "application/pdf");
         res.setHeader(
           "Content-Disposition",
@@ -180,7 +180,7 @@ app.get("/certificado/:id", (req, res) => {
         );
         res.end(pdfBuffer);
 
-        // Enviar email (assíncrono)
+        // 3️⃣ Enviar email (1 vez por ação)
         resend.emails.send({
           from: "Certificados <onboarding@resend.dev>",
           to: participante.email,
@@ -194,7 +194,7 @@ app.get("/certificado/:id", (req, res) => {
           ]
         })
         .then(() => {
-          console.log("📧 Certificado enviado por email para", participante.email);
+          console.log("📧 Certificado reenviado para", participante.email);
         })
         .catch(err => {
           console.error("❌ Erro ao enviar email:", err.message);
@@ -206,6 +206,7 @@ app.get("/certificado/:id", (req, res) => {
     }
   );
 });
+
 
 // ========================
 // SERVIDOR
